@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "westeurope" },
+    "storageAccountName": { "value": "aksdemo01weu9d9d14" },
+    "terraformStateContainerName": { "value": "aks-demo01-weu-tfstate" }
+  }
+}
