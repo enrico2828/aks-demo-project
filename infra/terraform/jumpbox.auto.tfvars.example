@@ -1,0 +1,23 @@
+# Copy this file to: jumpbox.auto.tfvars (that file is git-ignored)
+# Keep real values (SSH keys, IPs) out of Git.
+#
+# SSH key:
+# - Azure VM provisioning expects an RSA key here (ed25519 can be rejected).
+# - Example:
+#     jumpbox_ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... you@laptop"
+#
+# Tip (macOS):
+#   cat ~/.ssh/id_rsa.pub
+
+# Required
+jumpbox_ssh_public_key = ""
+
+# Optional: enable direct SSH to the jumpbox over the internet.
+# This is meant for demo convenience; keep it locked down to your current public IP.
+#
+# Example:
+#   jumpbox_assign_public_ip  = true
+#   jumpbox_allowed_ssh_cidrs = ["203.0.113.10/32"]
+
+jumpbox_assign_public_ip  = false
+jumpbox_allowed_ssh_cidrs = []
