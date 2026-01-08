@@ -178,3 +178,112 @@ variable "aks_system_node_zones" {
   # Default to no-zoning for portability; set explicitly (e.g., ["1"]) when supported.
   default     = []
 }
+
+# =============================================================================
+# Security Hardening Variables
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Log Analytics & Monitoring
+# -----------------------------------------------------------------------------
+variable "log_analytics_retention_days" {
+  description = "Log Analytics workspace retention in days."
+  type        = number
+  default     = 30  # Minimum allowed for Log Analytics
+}
+
+# -----------------------------------------------------------------------------
+# Microsoft Defender
+# -----------------------------------------------------------------------------
+variable "enable_defender_for_containers" {
+  description = "Enable Microsoft Defender for Containers at subscription level."
+  type        = bool
+  default     = true
+}
+
+# -----------------------------------------------------------------------------
+# Azure Policy
+# -----------------------------------------------------------------------------
+variable "enable_azure_policy" {
+  description = "Enable Azure Policy for Kubernetes (both add-on and policy assignments)."
+  type        = bool
+  default     = true
+}
+
+variable "azure_policy_level" {
+  description = "Policy level: 'baseline' (PSS baseline) or 'restricted' (PSS restricted)."
+  type        = string
+  default     = "baseline"
+}
+
+variable "azure_policy_effect" {
+  description = "Policy effect: 'audit' for visibility or 'deny' for enforcement."
+  type        = string
+  default     = "deny"
+}
+
+variable "azure_policy_excluded_namespaces" {
+  description = "Namespaces excluded from Azure Policy enforcement."
+  type        = list(string)
+  default     = ["kube-system", "gatekeeper-system", "azure-arc"]
+}
+
+# -----------------------------------------------------------------------------
+# Key Vault Secrets Provider
+# -----------------------------------------------------------------------------
+variable "key_vault_secrets_provider_enabled" {
+  description = "Enable Key Vault Secrets Provider (CSI driver) for secrets from Azure Key Vault."
+  type        = bool
+  default     = false
+}
+
+variable "key_vault_secret_rotation_enabled" {
+  description = "Enable automatic secret rotation for Key Vault Secrets Provider."
+  type        = bool
+  default     = true
+}
+
+variable "key_vault_secret_rotation_interval" {
+  description = "Rotation poll interval for Key Vault secrets (e.g., '2m')."
+  type        = string
+  default     = "2m"
+}
+
+# -----------------------------------------------------------------------------
+# Image Cleaner
+# -----------------------------------------------------------------------------
+variable "image_cleaner_enabled" {
+  description = "Enable Image Cleaner (Eraser) to remove stale/vulnerable images from nodes."
+  type        = bool
+  default     = true
+}
+
+variable "image_cleaner_interval_hours" {
+  description = "Interval in hours for Image Cleaner to scan and remove images."
+  type        = number
+  default     = 48
+}
+
+# -----------------------------------------------------------------------------
+# Network Policy
+# -----------------------------------------------------------------------------
+variable "aks_network_policy" {
+  description = "Network policy to use: 'azure' (Azure NPM), 'calico', or null (disabled)."
+  type        = string
+  default     = "azure"
+}
+
+# -----------------------------------------------------------------------------
+# Other Security Settings
+# -----------------------------------------------------------------------------
+variable "aks_run_command_enabled" {
+  description = "Enable 'az aks command invoke' (run command). Disable for tighter security."
+  type        = bool
+  default     = false
+}
+
+variable "aks_blob_driver_enabled" {
+  description = "Enable Azure Blob CSI driver for blob storage volumes."
+  type        = bool
+  default     = false
+}

@@ -39,4 +39,33 @@ module "aks" {
 
   # Grant Azure RBAC Cluster Admin at the AKS resource scope to the admin group.
   enable_rbac_cluster_admin_role_assignment = true
+
+  # -------------------------------------------------------------------------
+  # Security hardening
+  # -------------------------------------------------------------------------
+
+  # Azure Policy add-on (Gatekeeper)
+  azure_policy_addon_enabled = var.enable_azure_policy
+
+  # Log Analytics integration (Container Insights + Defender)
+  oms_agent_log_analytics_workspace_id    = module.aks_security.log_analytics_workspace_id
+  defender_log_analytics_workspace_id     = var.enable_defender_for_containers ? module.aks_security.log_analytics_workspace_id : null
+
+  # Key Vault Secrets Provider (CSI driver)
+  key_vault_secrets_provider_enabled = var.key_vault_secrets_provider_enabled
+  key_vault_secret_rotation_enabled  = var.key_vault_secret_rotation_enabled
+  key_vault_secret_rotation_interval = var.key_vault_secret_rotation_interval
+
+  # Image Cleaner (Eraser)
+  image_cleaner_enabled        = var.image_cleaner_enabled
+  image_cleaner_interval_hours = var.image_cleaner_interval_hours
+
+  # Network policy (Azure NPM or Calico)
+  network_policy = var.aks_network_policy
+
+  # Run command (az aks command invoke)
+  run_command_enabled = var.aks_run_command_enabled
+
+  # Blob CSI driver
+  blob_driver_enabled = var.aks_blob_driver_enabled
 }

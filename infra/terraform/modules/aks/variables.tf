@@ -89,3 +89,78 @@ variable "local_account_disabled" {
   description = "If true, disables local accounts (the --admin credential). Only Entra ID authentication will be allowed."
   default     = true
 }
+
+# -----------------------------------------------------------------------------
+# Security Hardening Variables
+# -----------------------------------------------------------------------------
+
+variable "azure_policy_addon_enabled" {
+  type        = bool
+  description = "Enable Azure Policy add-on for Kubernetes (Gatekeeper-based policy enforcement)."
+  default     = true
+}
+
+variable "defender_log_analytics_workspace_id" {
+  type        = string
+  description = "Log Analytics workspace ID for Microsoft Defender for Containers. Set to null to disable."
+  default     = null
+}
+
+variable "oms_agent_log_analytics_workspace_id" {
+  type        = string
+  description = "Log Analytics workspace ID for Container Insights (OMS agent). Set to null to disable."
+  default     = null
+}
+
+variable "key_vault_secrets_provider_enabled" {
+  type        = bool
+  description = "Enable Key Vault Secrets Provider (CSI driver) for secrets from Azure Key Vault."
+  default     = false
+}
+
+variable "key_vault_secret_rotation_enabled" {
+  type        = bool
+  description = "Enable automatic secret rotation for Key Vault Secrets Provider."
+  default     = true
+}
+
+variable "key_vault_secret_rotation_interval" {
+  type        = string
+  description = "Rotation poll interval for Key Vault secrets (e.g., '2m')."
+  default     = "2m"
+}
+
+variable "image_cleaner_enabled" {
+  type        = bool
+  description = "Enable Image Cleaner (Eraser) to remove stale/vulnerable images from nodes."
+  default     = true
+}
+
+variable "image_cleaner_interval_hours" {
+  type        = number
+  description = "Interval in hours for Image Cleaner to scan and remove images."
+  default     = 48
+}
+
+variable "run_command_enabled" {
+  type        = bool
+  description = "Enable 'az aks command invoke' (run command). Disable for tighter security."
+  default     = false
+}
+
+variable "network_policy" {
+  type        = string
+  description = "Network policy to use: 'azure' (Azure NPM), 'calico', or null (disabled)."
+  default     = "azure"
+
+  validation {
+    condition     = var.network_policy == null || contains(["azure", "calico"], var.network_policy)
+    error_message = "network_policy must be 'azure', 'calico', or null."
+  }
+}
+
+variable "blob_driver_enabled" {
+  type        = bool
+  description = "Enable Azure Blob CSI driver for blob storage volumes."
+  default     = false
+}

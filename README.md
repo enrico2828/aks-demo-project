@@ -10,6 +10,7 @@ An enterprise-style AKS platform for architecture practice (AZ-305) and demonstr
 | **VNet** | `aks-demo01-dev-weu-vnet` with subnets for AKS, jumpbox, and private endpoints |
 | **AKS Cluster** | Private cluster with Azure CNI Overlay, Entra ID integration, Azure RBAC for Kubernetes |
 | **Jumpbox VM** | Linux VM for cluster administration (SSH + optional public IP) |
+| **Log Analytics** | Central logging for Container Insights and control plane logs |
 | **Terraform State** | Remote state in Azure Storage |
 
 ### Security posture
@@ -17,6 +18,12 @@ An enterprise-style AKS platform for architecture practice (AZ-305) and demonstr
 - **Private AKS** — API server is not exposed to the internet
 - **Entra ID authentication** — no local Kubernetes accounts; `--admin` credential disabled
 - **Azure RBAC for Kubernetes** — authorization via Azure role assignments
+- **Azure Policy for Kubernetes** — Pod Security Standards (baseline or restricted)
+- **Microsoft Defender for Containers** — Runtime threat detection and vulnerability scanning
+- **Container Insights** — Full observability with Log Analytics
+- **Network Policy (Azure NPM)** — Micro-segmentation for pod-to-pod traffic
+- **Image Cleaner** — Automatic removal of stale/vulnerable images from nodes
+- **Run Command disabled** — Prevents `az aks command invoke` access
 - **Jumpbox hardened** — SSH keys only, explicit CIDR allow-list, no password auth
 
 ## Repository layout
@@ -27,6 +34,7 @@ infra/
 └── terraform/
     ├── modules/
     │   ├── aks/            # AKS cluster module
+    │   ├── aks-security/   # Security controls (Log Analytics, Policy, Defender)
     │   ├── jumpbox/        # Jumpbox VM module
     │   └── network/        # VNet + subnets module
     ├── *.tf                # Root module
@@ -155,10 +163,14 @@ The jumpbox includes:
 | `jumpbox_public_ip` | Jumpbox public IP (if enabled) |
 | `jumpbox_private_ip` | Jumpbox private IP |
 | `aks_access_commands` | Ready-to-copy commands for AKS access |
+| `log_analytics_workspace_id` | Log Analytics workspace resource ID |
+| `security_features_enabled` | Summary of security features enabled |
 
 ## Configuration reference
 
 Key variables (see `variables.tf` for full list):
+
+### General
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -167,8 +179,22 @@ Key variables (see `variables.tf` for full list):
 | `environment` | `dev` | Environment tag |
 | `aks_admin_group_object_ids` | — | Entra ID group(s) for cluster admin |
 | `jumpbox_bootstrap_tools` | `false` | Install az/kubectl/kubelogin via cloud-init |
-| `jumpbox_kubectl_version` | (latest) | Pin kubectl version |
-| `jumpbox_kubelogin_version` | (latest) | Pin kubelogin version |
+| `jumpbox_kubectl_version` | (latest) | Pin kubectl version (e.g., `v1.29.15`) |
+| `jumpbox_kubelogin_version` | (latest) | Pin kubelogin version (e.g., `0.2.14`) |
+
+### Security hardening
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `enable_azure_policy` | `true` | Enable Azure Policy for Kubernetes |
+| `azure_policy_level` | `baseline` | `baseline` (PSS baseline) or `restricted` (PSS restricted) |
+| `azure_policy_effect` | `deny` | `audit` for visibility, `deny` for enforcement |
+| `enable_defender_for_containers` | `true` | Enable Microsoft Defender for Containers |
+| `aks_network_policy` | `azure` | Network policy: `azure`, `calico`, or `null` |
+| `image_cleaner_enabled` | `true` | Remove stale/vulnerable images from nodes |
+| `aks_run_command_enabled` | `false` | Allow `az aks command invoke` |
+| `key_vault_secrets_provider_enabled` | `false` | Enable Key Vault CSI driver |
+| `log_analytics_retention_days` | `30` | Log retention in days (minimum) |
 
 ## Architecture notes
 
@@ -184,10 +210,26 @@ Key variables (see `variables.tf` for full list):
 ### AKS configuration
 
 - **Network plugin**: Azure CNI Overlay
+- **Network policy**: Azure NPM (default) — enables pod-to-pod micro-segmentation
 - **Private cluster**: Yes (API server not internet-accessible)
 - **Local accounts**: Disabled (Entra ID only)
 - **OIDC issuer**: Enabled (for Workload Identity)
 - **System node pool**: 1 node, `Standard_D2s_v5`, critical addons only
+- **Azure Policy**: Gatekeeper-based pod security enforcement
+- **Image Cleaner**: Automatic cleanup of stale images (48h interval)
+- **Run command**: Disabled
+
+### Security controls
+
+| Control | Implementation |
+|---------|----------------|
+| **Identity** | Entra ID + Azure RBAC for Kubernetes |
+| **Network** | Private cluster + Azure Network Policy |
+| **Policy** | Azure Policy (Pod Security Standards) |
+| **Detection** | Microsoft Defender for Containers |
+| **Logging** | Container Insights + control plane audit logs |
+| **Secrets** | Key Vault Secrets Provider (CSI driver, optional) |
+| **Images** | Image Cleaner for stale image removal |
 
 ### Authentication flow
 
@@ -201,8 +243,17 @@ Key variables (see `variables.tf` for full list):
 
 Planned additions:
 
-- ACR (Azure Container Registry)
-- Key Vault for secrets
-- Log Analytics / Container Insights
+- ACR (Azure Container Registry) with private endpoint
+- Key Vault integration with CSI driver
 - GitHub Actions (OIDC-based CI/CD)
 - Application workloads with Workload Identity
+- Network policies for workload segmentation
+- Alerting (Action Group + metric/log alerts for node/pod health)
+
+## Out of scope
+
+The following are useful for production but excluded from this demo due to cost:
+
+- **Azure Managed Grafana + Prometheus** — Full observability stack (~€150/month for Grafana). Container Insights provides sufficient monitoring for demo purposes.
+- **Azure Front Door / Application Gateway** — Ingress with WAF.
+- **Azure Firewall** — Egress filtering (requires dedicated subnet + ~€900/month).
