@@ -21,3 +21,13 @@ jumpbox_ssh_public_key = ""
 
 jumpbox_assign_public_ip  = false
 jumpbox_allowed_ssh_cidrs = []
+
+# Optional: install AKS admin tooling (az, kubectl, kubelogin) onto the jumpbox.
+# Note: enabling this will recreate the VM (custom_data changes).
+jumpbox_bootstrap_tools = false
+
+# AKS (private) access control: Entra ID group object IDs that should be cluster-admin.
+# Required when deploying AKS.
+# Example:
+#   aks_admin_group_object_ids = ["00000000-0000-0000-0000-000000000000"]
+aks_admin_group_object_ids = ["00000000-0000-0000-0000-000000000000"]

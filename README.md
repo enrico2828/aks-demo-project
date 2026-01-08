@@ -1,38 +1,47 @@
 # Azure-native AKS Demo (Terraform)
 
-This repository is a hands-on AKS platform buildout intended for architecture practice (AZ-305 style) and for demonstrating a pragmatic, enterprise-leaning approach.
+An enterprise-style AKS platform for architecture practice (AZ-305) and demonstration purposes.
 
-The project is implemented incrementally. The **current state** delivers:
+## What's deployed
 
-- Terraform remote state in Azure Storage (bootstrapped via ARM)
-- A foundation resource group
-- A VNet with right-sized subnets
-- A Linux jumpbox VM for administration tasks
-  - SSH keys only (no password authentication)
-  - Optional public IP for demo convenience
-  - SSH restricted to an explicit allow-list of CIDRs
+| Resource | Description |
+|----------|-------------|
+| **Resource Group** | `aks-demo01-dev-weu-rg` |
+| **VNet** | `aks-demo01-dev-weu-vnet` with subnets for AKS, jumpbox, and private endpoints |
+| **AKS Cluster** | Private cluster with Azure CNI Overlay, Entra ID integration, Azure RBAC for Kubernetes |
+| **Jumpbox VM** | Linux VM for cluster administration (SSH + optional public IP) |
+| **Terraform State** | Remote state in Azure Storage |
 
-## Repo layout
+### Security posture
 
-- `infra/bootstrap/arm/`  ARM template used to provision Terraform remote state infrastructure
-- `infra/terraform/`  Terraform root module (network + jumpbox)
+- **Private AKS** — API server is not exposed to the internet
+- **Entra ID authentication** — no local Kubernetes accounts; `--admin` credential disabled
+- **Azure RBAC for Kubernetes** — authorization via Azure role assignments
+- **Jumpbox hardened** — SSH keys only, explicit CIDR allow-list, no password auth
+
+## Repository layout
+
+```
+infra/
+├── bootstrap/arm/          # ARM template for Terraform state storage
+└── terraform/
+    ├── modules/
+    │   ├── aks/            # AKS cluster module
+    │   ├── jumpbox/        # Jumpbox VM module
+    │   └── network/        # VNet + subnets module
+    ├── *.tf                # Root module
+    └── backend.hcl         # Backend configuration
+```
 
 ## Prerequisites
 
-- Azure CLI authenticated to the correct subscription
-- Terraform >= 1.5 (see `infra/terraform/versions.tf`)
+- Azure CLI (`az`) authenticated to the target subscription
+- Terraform >= 1.5
+- An Entra ID security group for AKS administrators
 
-## Remote state bootstrap (ARM)
+## Quick start
 
-Terraform state is stored remotely in Azure Storage. The storage account + container are created via ARM.
-
-1) Choose a resource group name for Terraform state, for example `aks-demo01-weu-tfstate-rg`.
-
-2) Choose a globally unique storage account name (324 chars; lowercase letters and numbers only) and update:
-
-- `infra/bootstrap/arm/tfstate.parameters.json`
-
-3) Deploy the ARM template:
+### 1. Bootstrap Terraform state storage
 
 ```zsh
 az login
@@ -47,78 +56,73 @@ az deployment group create \
   --parameters infra/bootstrap/arm/tfstate.parameters.json
 ```
 
-> The state storage account uses **Standard_LRS** to keep costs down.
+### 2. Create Entra ID admin group
 
-## Terraform backend configuration
+```zsh
+az ad group create \
+  --display-name "aks-demo01-cluster-admins" \
+  --mail-nickname "aks-demo01-cluster-admins" \
+  --description "AKS cluster administrators"
 
-Backend settings live in `infra/terraform/backend.hcl`. Update it to match your state RG/storage/container/key and then initialize:
+# Get the group object ID
+az ad group show --group "aks-demo01-cluster-admins" --query id -o tsv
+
+# Add yourself to the group
+az ad group member add \
+  --group "aks-demo01-cluster-admins" \
+  --member-id "$(az ad signed-in-user show --query id -o tsv)"
+```
+
+### 3. Configure Terraform
 
 ```zsh
 cd infra/terraform
+
+# Initialize with remote backend
 terraform init -backend-config=backend.hcl
-```
 
-## Local configuration (recommended)
-
-This deployment uses local-only `*.auto.tfvars` files for developer-specific settings.
-These files are not committed (see `.gitignore`).
-
-### Generate an SSH key (recommended)
-
-Create a dedicated keypair for this project.
-
-```zsh
-# Note: Azure VM provisioning expects an RSA public key here (ed25519 can be rejected).
-ssh-keygen -t rsa -b 4096 -a 64 -C "aks-demo-jumpbox" -f ~/.ssh/aks-demo-jumpbox-rsa
-
-# Print the public key (paste the full line into jumpbox.auto.tfvars)
-cat ~/.ssh/aks-demo-jumpbox-rsa.pub
-```
-
-### Configure Terraform (jumpbox settings)
-
-```zsh
-cd infra/terraform
+# Create local configuration (not committed)
 cp jumpbox.auto.tfvars.example jumpbox.auto.tfvars
 ```
 
-Edit `infra/terraform/jumpbox.auto.tfvars` and set at minimum:
+Edit `jumpbox.auto.tfvars`:
 
-- `jumpbox_ssh_public_key`  OpenSSH-format public key string
+```hcl
+# SSH public key (RSA format)
+jumpbox_ssh_public_key = "ssh-rsa AAAA..."
 
-To enable SSH access from your laptop:
+# Enable public IP for SSH access
+jumpbox_assign_public_ip  = true
+jumpbox_allowed_ssh_cidrs = ["<your-ip>/32"]
 
-- `jumpbox_assign_public_ip = true`
-- `jumpbox_allowed_ssh_cidrs = ["<your-public-ip>/32"]`
+# Install az, kubectl, kubelogin on jumpbox
+jumpbox_bootstrap_tools = true
 
-## Deploy / update the foundation
+# Entra ID group for AKS admin access (required)
+aks_admin_group_object_ids = ["<group-object-id>"]
+```
+
+### 4. Deploy
 
 ```zsh
-cd infra/terraform
-terraform fmt -recursive
-terraform validate
 terraform apply
 ```
 
-## Connect to the jumpbox
+## Accessing AKS
 
-After `terraform apply`, retrieve the public IP (if enabled):
+The AKS API server is private — access it from the jumpbox.
+
+### Connect to jumpbox
 
 ```zsh
-cd infra/terraform
+# Get the public IP
 terraform output jumpbox_public_ip
-```
 
-On macOS, SSH can offer many keys from your agent/keychain and the VM may disconnect with **"Too many authentication failures"**.
-Use `IdentitiesOnly` to ensure only the intended key is offered.
-
-One-off connection:
-
-```zsh
+# SSH (use IdentitiesOnly to avoid "too many auth failures")
 ssh -o IdentitiesOnly=yes -i ~/.ssh/aks-demo-jumpbox-rsa azureuser@<jumpbox_public_ip>
 ```
 
-Optional `~/.ssh/config` entry:
+Or add to `~/.ssh/config`:
 
 ```sshconfig
 Host aks-demo-jumpbox
@@ -128,32 +132,77 @@ Host aks-demo-jumpbox
   IdentitiesOnly yes
 ```
 
-Then connect with:
+### Access AKS from jumpbox
 
 ```zsh
-ssh aks-demo-jumpbox
+az login
+az aks get-credentials --resource-group aks-demo01-dev-weu-rg --name aks-demo01-dev-weu-aks --overwrite-existing
+kubectl get nodes
 ```
 
-## Outputs
+The jumpbox includes:
+- `kubectl` with bash completion
+- `k` alias for `kubectl`
+- `kubelogin` for Entra ID token handling
 
-Terraform exports a few useful values (see `infra/terraform/outputs.tf`), including:
+## Terraform outputs
 
-- `jumpbox_private_ip`
-- `jumpbox_public_ip` (if enabled)
-- `subnet_ids`
+| Output | Description |
+|--------|-------------|
+| `aks_name` | AKS cluster name |
+| `aks_private_fqdn` | Private FQDN of the API server |
+| `aks_oidc_issuer_url` | OIDC issuer URL (for Workload Identity) |
+| `jumpbox_public_ip` | Jumpbox public IP (if enabled) |
+| `jumpbox_private_ip` | Jumpbox private IP |
+| `aks_access_commands` | Ready-to-copy commands for AKS access |
 
-## Defaults
+## Configuration reference
 
-Terraform defaults (see `infra/terraform/variables.tf`):
+Key variables (see `variables.tf` for full list):
 
-- `location`: `westeurope`
-- `prefix`: `aks-demo01`
-- `environment`: `dev`
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `location` | `westeurope` | Azure region |
+| `prefix` | `aks-demo01` | Resource naming prefix |
+| `environment` | `dev` | Environment tag |
+| `aks_admin_group_object_ids` | — | Entra ID group(s) for cluster admin |
+| `jumpbox_bootstrap_tools` | `false` | Install az/kubectl/kubelogin via cloud-init |
+| `jumpbox_kubectl_version` | (latest) | Pin kubectl version |
+| `jumpbox_kubelogin_version` | (latest) | Pin kubelogin version |
+
+## Architecture notes
+
+### Network
+
+- VNet: `10.10.0.0/16`
+- AKS subnet: `10.10.0.0/22` (1024 addresses)
+- Jumpbox subnet: `10.10.5.0/27` (32 addresses)
+- Private endpoints subnet: `10.10.4.0/24`
+- Pod CIDR (overlay): `192.168.0.0/16`
+- Service CIDR: `10.20.0.0/16`
+
+### AKS configuration
+
+- **Network plugin**: Azure CNI Overlay
+- **Private cluster**: Yes (API server not internet-accessible)
+- **Local accounts**: Disabled (Entra ID only)
+- **OIDC issuer**: Enabled (for Workload Identity)
+- **System node pool**: 1 node, `Standard_D2s_v5`, critical addons only
+
+### Authentication flow
+
+1. User SSHs to jumpbox
+2. `az login` authenticates to Entra ID
+3. `az aks get-credentials` fetches kubeconfig (configured for Entra auth)
+4. `kubectl` commands use `kubelogin` to obtain tokens from the `az` session
+5. AKS validates the token and checks Azure RBAC role assignments
 
 ## Next steps
 
-Planned additions (not implemented yet):
+Planned additions:
 
-- AKS deployment (cluster, node pools, identities)
-- ACR + Key Vault + Log Analytics
-- GitHub Actions (Terraform and application delivery using OIDC)
+- ACR (Azure Container Registry)
+- Key Vault for secrets
+- Log Analytics / Container Insights
+- GitHub Actions (OIDC-based CI/CD)
+- Application workloads with Workload Identity

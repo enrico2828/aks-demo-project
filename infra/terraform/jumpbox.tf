@@ -24,4 +24,14 @@ module "jumpbox" {
   image_version   = var.jumpbox_image_version
 
   allowed_ssh_cidrs = var.jumpbox_allowed_ssh_cidrs
+
+  cloud_init = var.jumpbox_bootstrap_tools ? templatefile("${path.module}/modules/jumpbox/cloud-init.yaml.tftpl", {
+    # If null, cloud-init will omit the version flag and let `az aks install-cli` install "latest".
+    kubectl_version = (
+      var.jumpbox_kubectl_version != null ? var.jumpbox_kubectl_version : (
+        var.aks_kubernetes_version != null ? "v${var.aks_kubernetes_version}" : ""
+      )
+    )
+    kubelogin_version = var.jumpbox_kubelogin_version != null ? var.jumpbox_kubelogin_version : ""
+  }) : null
 }

@@ -84,6 +84,9 @@ resource "azurerm_linux_virtual_machine" "vm" {
 
   admin_username = var.admin_username
 
+  # Optional cloud-init to bootstrap tooling (az, kubectl, kubelogin, etc.).
+  custom_data = var.cloud_init != null && length(trimspace(var.cloud_init)) > 0 ? base64encode(var.cloud_init) : null
+
   # SSH keys only. No password authentication.
   disable_password_authentication = true
 

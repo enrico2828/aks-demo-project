@@ -70,3 +70,9 @@ variable "image_version" {
   type        = string
   description = "OS image version."
 }
+
+variable "cloud_init" {
+  type        = string
+  description = "Optional cloud-init user data to bootstrap the VM. If null/empty, no custom data is applied."
+  default     = null
+}

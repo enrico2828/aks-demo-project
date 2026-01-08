@@ -1,0 +1,67 @@
+#cloud-config
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - apt-transport-https
+  - gnupg
+  - lsb-release
+  - jq
+
+write_files:
+  - path: /etc/profile.d/aks-demo.sh
+    permissions: "0644"
+    content: |
+      # AKS demo - jumpbox environment
+      export KUBECONFIG=$HOME/.kube/config
+
+      # kubectl alias
+      alias k='kubectl'
+
+      # kubectl autocomplete (bash)
+      if command -v kubectl &>/dev/null; then
+        source <(kubectl completion bash)
+        complete -o default -F __start_kubectl k
+      fi
+
+  - path: /opt/aks-demo/install-tools.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      echo "=== Installing Azure CLI ==="
+      curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
+      echo "=== Installing kubectl + kubelogin ==="
+      KUBECTL_VER="${kubectl_version}"
+      KUBELOGIN_VER="${kubelogin_version}"
+
+      cmd="az aks install-cli --install-location /usr/local/bin/kubectl --kubelogin-install-location /usr/local/bin/kubelogin"
+
+      if [ -n "$${KUBECTL_VER}" ] && [ "$${KUBECTL_VER}" != "null" ]; then
+        cmd="$${cmd} --client-version $${KUBECTL_VER}"
+      fi
+
+      if [ -n "$${KUBELOGIN_VER}" ] && [ "$${KUBELOGIN_VER}" != "null" ]; then
+        cmd="$${cmd} --kubelogin-version $${KUBELOGIN_VER}"
+      fi
+
+      echo "Running: $${cmd}"
+      eval "$${cmd}"
+
+      echo "=== Verifying installations ==="
+      az version --query azure-cli -o tsv
+      kubectl version --client=true
+      kubelogin --version
+
+      echo "=== Done ==="
+
+runcmd:
+  - mkdir -p /opt/aks-demo
+  - bash /opt/aks-demo/install-tools.sh
+
+final_message: "Jumpbox bootstrap complete: az, kubectl, kubelogin installed."
