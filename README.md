@@ -197,31 +197,34 @@ az role assignment create \
 3. **Add Federated Credential for GitHub:**
 
 ```zsh
-# For the 'main' branch
+# This workflow uses GitHub *Environments* (env: dev). When a job runs with
+# `environment: dev`, GitHub's OIDC subject looks like:
+#   repo:<owner>/<repo>:environment:dev
+
+# For the 'dev' environment (used by PR plans and (for now) applies)
 az ad app federated-credential create --id $APP_ID --parameters '{
-  "name": "gha-aks-demo-project-main",
+  "name": "gha-aks-demo-project-env-dev",
   "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:enrico2828/aks-demo-project:ref:refs/heads/main",
+  "subject": "repo:enrico2828/aks-demo-project:environment:dev",
   "audiences": ["api://AzureADTokenExchange"]
 }'
 
-# For pull requests
-az ad app federated-credential create --id $APP_ID --parameters '{
-  "name": "gha-aks-demo-project-pr",
-  "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:enrico2828/aks-demo-project:pull_request",
-  "audiences": ["api://AzureADTokenExchange"]
-}'
+# Future option: if you later add more environments (e.g. production),
+# add additional federated credentials that match the environment subject:
+#   repo:enrico2828/aks-demo-project:environment:production
+
+# Alternative: if you decide NOT to use GitHub Environments, you can federate by branch/PR subjects:
+#   repo:enrico2828/aks-demo-project:ref:refs/heads/main
+#   repo:enrico2828/aks-demo-project:pull_request
 ```
 
 4. **Add GitHub Repository Secrets:**
 
 For multi-environment setups, prefer **Environment secrets** (recommended) so you can protect applies with approvals.
 
-Create environments named **dev** (default in this repo) and optionally **production**:
+Create an environment named **dev** (this repo currently uses a single environment for both plan and apply):
 
 - **Settings → Environments → New environment → `dev`**
-- **Settings → Environments → New environment → `production`** (optional)
 
 Then add secrets under each environment:
 
@@ -233,12 +236,16 @@ Then add secrets under each environment:
 
 > **Tip:** You can also store these as **Repository secrets** (Settings → Secrets and variables → Actions) if you only use one environment.
 
-> **Heads up:** The workflow `infra-terraform.yml` runs the plan job in the **`dev`** environment and the apply job in **`production`**.
-> If you only define Environment secrets under `production`, PR plans will fail to log in.
+> **Heads up:** The workflow `infra-terraform.yml` currently runs both plan and apply in the **`dev`** environment.
+> If you add more environments later, you must also add matching federated credentials and secrets for each environment.
 
-5. **(Optional) Protect the `production` environment:**
+> **OIDC note:** When using GitHub Environments, the OIDC subject claim changes to
+> `repo:<owner>/<repo>:environment:<env>`. Make sure your Entra **Federated credentials** include a matching subject
+> (e.g., `repo:enrico2828/aks-demo-project:environment:dev`).
 
-Go to **Settings → Environments → New environment → "production"** and add required reviewers for manual approval before apply.
+5. **(Optional) Add a `production` environment later** (out of scope for this demo)
+
+If you later introduce a `production` environment for gated applies, add required reviewers and create a matching Entra federated credential.
 
 ## Accessing AKS
 
