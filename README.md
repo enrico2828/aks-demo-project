@@ -177,6 +177,7 @@ LOCATION_CODE="weu"        # westeurope → weu, northeurope → neu
 SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 INFRA_RG="${PREFIX}-${ENVIRONMENT}-${LOCATION_CODE}-rg"
 TFSTATE_RG="${PREFIX}-${LOCATION_CODE}-tfstate-rg"
+TFSTATE_STORAGE_ACCOUNT="aksdemo01weu9d9d14"  # from infra/terraform/backend.hcl
 
 # Contributor on the infra resource group (create/update/delete resources)
 az role assignment create \
@@ -184,11 +185,11 @@ az role assignment create \
   --role "Contributor" \
   --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$INFRA_RG"
 
-# Storage Blob Data Contributor on tfstate RG (read/write state blobs)
+# Storage Blob Data Contributor on the tfstate storage account (read/write state blobs)
 az role assignment create \
   --assignee $APP_ID \
   --role "Storage Blob Data Contributor" \
-  --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$TFSTATE_RG"
+  --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$TFSTATE_RG/providers/Microsoft.Storage/storageAccounts/$TFSTATE_STORAGE_ACCOUNT"
 ```
 
 > **Note:** For initial bootstrap (creating new RGs), you may need temporary broader scope,
