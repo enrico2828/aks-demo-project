@@ -53,6 +53,10 @@ resource "azurerm_public_ip" "pip" {
   sku               = "Standard"
 
   tags = var.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "azurerm_network_interface" "nic" {

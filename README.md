@@ -116,6 +116,20 @@ aks_admin_group_object_ids = ["<group-object-id>"]
 terraform apply
 ```
 
+### Destroy / cleanup
+
+This demo uses Terraform safety rails (`lifecycle.prevent_destroy`) to protect:
+
+- the AKS cluster
+- the jumpbox public IP
+
+So a plain `terraform destroy` will fail unless you **temporarily remove** the `prevent_destroy = true` lines in:
+
+- `infra/terraform/modules/aks/main.tf`
+- `infra/terraform/modules/jumpbox/main.tf`
+
+Then run `terraform destroy`, and re-enable `prevent_destroy` afterwards.
+
 ## Accessing AKS
 
 The AKS API server is private — access it from the jumpbox.
@@ -195,6 +209,20 @@ Key variables (see `variables.tf` for full list):
 | `aks_run_command_enabled` | `false` | Allow `az aks command invoke` |
 | `key_vault_secrets_provider_enabled` | `false` | Enable Key Vault CSI driver |
 | `log_analytics_retention_days` | `30` | Log retention in days (minimum) |
+
+### Safety rails
+
+Some resources are protected with Terraform `lifecycle.prevent_destroy` to reduce the risk of accidental deletion:
+
+- AKS cluster (`modules/aks/main.tf`)
+- Jumpbox public IP (`modules/jumpbox/main.tf`)
+
+### How to destroy when really needed
+To destroy intentionally:
+
+1. Temporarily remove (or set to `false`) the `prevent_destroy = true` lines in the two files above.
+2. Run `terraform destroy` (or `terraform destroy -target=module.aks` / `-target=module.jumpbox`).
+3. Re-enable `prevent_destroy = true` afterwards.
 
 ## Architecture notes
 

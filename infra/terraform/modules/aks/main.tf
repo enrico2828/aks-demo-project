@@ -127,6 +127,8 @@ resource "azurerm_kubernetes_cluster" "aks" {
   tags = var.tags
 
   lifecycle {
+    prevent_destroy = true
+
     precondition {
       condition     = length(var.admin_group_object_ids) > 0
       error_message = "admin_group_object_ids must contain at least one Entra ID group object ID."
