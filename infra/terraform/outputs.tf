@@ -75,16 +75,16 @@ output "aks_kubelet_identity" {
 output "security_features_enabled" {
   description = "Summary of security features enabled on the cluster."
   value = {
-    private_cluster           = true
-    local_accounts_disabled   = true
-    azure_policy              = var.enable_azure_policy
-    azure_policy_level        = var.azure_policy_level
-    azure_policy_effect       = var.azure_policy_effect
-    defender_for_containers   = var.enable_defender_for_containers
-    container_insights        = true
-    network_policy            = var.aks_network_policy
-    image_cleaner             = var.image_cleaner_enabled
+    private_cluster            = true
+    local_accounts_disabled    = true
+    azure_policy               = var.enable_azure_policy
+    azure_policy_level         = var.azure_policy_level
+    azure_policy_effect        = var.azure_policy_effect
+    defender_for_containers    = var.enable_defender_for_containers
+    container_insights         = true
+    network_policy             = var.aks_network_policy
+    image_cleaner              = var.image_cleaner_enabled
     key_vault_secrets_provider = var.key_vault_secrets_provider_enabled
-    run_command_disabled      = !var.aks_run_command_enabled
+    run_command_disabled       = !var.aks_run_command_enabled
   }
 }

@@ -48,8 +48,8 @@ module "aks" {
   azure_policy_addon_enabled = var.enable_azure_policy
 
   # Log Analytics integration (Container Insights + Defender)
-  oms_agent_log_analytics_workspace_id    = module.aks_security.log_analytics_workspace_id
-  defender_log_analytics_workspace_id     = var.enable_defender_for_containers ? module.aks_security.log_analytics_workspace_id : null
+  oms_agent_log_analytics_workspace_id = module.aks_security.log_analytics_workspace_id
+  defender_log_analytics_workspace_id  = var.enable_defender_for_containers ? module.aks_security.log_analytics_workspace_id : null
 
   # Key Vault Secrets Provider (CSI driver)
   key_vault_secrets_provider_enabled = var.key_vault_secrets_provider_enabled

@@ -176,7 +176,7 @@ variable "aks_system_node_zones" {
   type        = list(string)
   # NOTE: Zone support can vary by subscription/SKU even within the same region.
   # Default to no-zoning for portability; set explicitly (e.g., ["1"]) when supported.
-  default     = []
+  default = []
 }
 
 # =============================================================================
@@ -189,7 +189,7 @@ variable "aks_system_node_zones" {
 variable "log_analytics_retention_days" {
   description = "Log Analytics workspace retention in days."
   type        = number
-  default     = 30  # Minimum allowed for Log Analytics
+  default     = 30 # Minimum allowed for Log Analytics
 }
 
 # -----------------------------------------------------------------------------

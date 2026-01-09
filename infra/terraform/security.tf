@@ -26,8 +26,8 @@ module "aks_security" {
   enable_defender_for_containers = var.enable_defender_for_containers
 
   # Azure Policy
-  enable_azure_policy               = var.enable_azure_policy
-  azure_policy_level                = var.azure_policy_level
-  azure_policy_effect               = var.azure_policy_effect
-  azure_policy_excluded_namespaces  = var.azure_policy_excluded_namespaces
+  enable_azure_policy              = var.enable_azure_policy
+  azure_policy_level               = var.azure_policy_level
+  azure_policy_effect              = var.azure_policy_effect
+  azure_policy_excluded_namespaces = var.azure_policy_excluded_namespaces
 }
