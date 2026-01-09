@@ -218,7 +218,7 @@ az ad app federated-credential create --id $APP_ID --parameters '{
 
 For multi-environment setups, prefer **Environment secrets** (recommended) so you can protect applies with approvals.
 
-Create an environment named **dev** (default in this repo) and optionally **production**:
+Create environments named **dev** (default in this repo) and optionally **production**:
 
 - **Settings → Environments → New environment → `dev`**
 - **Settings → Environments → New environment → `production`** (optional)
@@ -232,6 +232,9 @@ Then add secrets under each environment:
 | `AZURE_SUBSCRIPTION_ID` | `az account show --query id -o tsv` |
 
 > **Tip:** You can also store these as **Repository secrets** (Settings → Secrets and variables → Actions) if you only use one environment.
+
+> **Heads up:** The workflow `infra-terraform.yml` runs the plan job in the **`dev`** environment and the apply job in **`production`**.
+> If you only define Environment secrets under `production`, PR plans will fail to log in.
 
 5. **(Optional) Protect the `production` environment:**
 

@@ -34,7 +34,8 @@ concurrency:
 env:
   TF_WORKING_DIR: infra/terraform
   TF_VERSION: "1.5.7"
-  # Azure OIDC - set these in GitHub repo secrets/variables
+  # Azure OIDC - set these as GitHub *Environment secrets* (preferred) or Repo secrets
+  # We map them to ARM_* for the Terraform azurerm provider.
   ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -52,6 +53,8 @@ jobs:
   terraform-plan:
     name: "Validate & Plan"
     runs-on: ubuntu-latest
+    # Use the dev environment so Environment secrets are available (defaults in this repo).
+    environment: dev
     outputs:
       plan-exit-code: ${{ steps.plan.outputs.exitcode }}
 
@@ -68,9 +71,9 @@ jobs:
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -164,9 +167,9 @@ jobs:
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
