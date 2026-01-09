@@ -1,0 +1,183 @@
+# =============================================================================
+# Infrastructure: Terraform CI/CD
+# =============================================================================
+# Triggers:
+#   - PR to main/develop → validate + plan (comment on PR)
+#   - Push to main       → apply (after plan)
+#
+# Authentication: Azure OIDC (federated identity, no stored secrets)
+# =============================================================================
+
+name: "Infra: Terraform"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/infra-terraform.yml"
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/infra-terraform.yml"
+  workflow_dispatch: # Manual trigger
+
+# Prevent concurrent runs on the same ref
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TF_WORKING_DIR: infra/terraform
+  TF_VERSION: "1.5.7"
+  # Azure OIDC - set these in GitHub repo secrets/variables
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_USE_OIDC: true
+
+permissions:
+  id-token: write   # Required for OIDC
+  contents: read
+  pull-requests: write  # To comment plan output on PRs
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Validate & Plan
+  # ---------------------------------------------------------------------------
+  terraform-plan:
+    name: "Validate & Plan"
+    runs-on: ubuntu-latest
+    outputs:
+      plan-exit-code: ${{ steps.plan.outputs.exitcode }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform Format Check
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan -no-color -input=false -out=tfplan \
+            -detailed-exitcode 2>&1 | tee plan_output.txt
+          echo "exitcode=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Comment Plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const planOutput = fs.readFileSync('${{ env.TF_WORKING_DIR }}/plan_output.txt', 'utf8');
+            const maxLength = 60000; // GitHub comment limit
+            const truncated = planOutput.length > maxLength 
+              ? planOutput.substring(0, maxLength) + '\n\n... (truncated)'
+              : planOutput;
+            
+            const body = `## Terraform Plan 📋
+            
+            <details>
+            <summary>Click to expand plan output</summary>
+            
+            \`\`\`hcl
+            ${truncated}
+            \`\`\`
+            
+            </details>
+            
+            **Exit code:** \`${{ steps.plan.outputs.exitcode }}\`
+            - \`0\` = No changes
+            - \`2\` = Changes pending
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Upload Plan Artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.TF_WORKING_DIR }}/tfplan
+          retention-days: 1
+
+      - name: Fail on Plan Error
+        if: steps.plan.outputs.exitcode == '1'
+        run: exit 1
+
+  # ---------------------------------------------------------------------------
+  # Apply (only on push to main)
+  # ---------------------------------------------------------------------------
+  terraform-apply:
+    name: "Apply"
+    runs-on: ubuntu-latest
+    needs: terraform-plan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.terraform-plan.outputs.plan-exit-code == '2'
+    environment: production  # Optional: requires manual approval if configured
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Download Plan Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve -input=false tfplan

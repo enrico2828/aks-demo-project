@@ -13,8 +13,8 @@ module "aks_security" {
 
   name_prefix         = local.name_prefix
   location            = var.location
-  resource_group_name = azurerm_resource_group.rg.name
-  resource_group_id   = azurerm_resource_group.rg.id
+  resource_group_name = data.azurerm_resource_group.rg.name
+  resource_group_id   = data.azurerm_resource_group.rg.id
   tags                = local.common_tags
 
   aks_cluster_id = module.aks.id

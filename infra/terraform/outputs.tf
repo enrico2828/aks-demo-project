@@ -1,6 +1,6 @@
 output "resource_group_name" {
   description = "Resource group created for the demo."
-  value       = azurerm_resource_group.rg.name
+  value       = data.azurerm_resource_group.rg.name
 }
 
 output "vnet_name" {
@@ -43,7 +43,7 @@ output "aks_access_commands" {
   value = join("\n", [
     "# --- AKS access (run on the jumpbox) ---",
     "az login",
-    "az aks get-credentials --resource-group ${azurerm_resource_group.rg.name} --name ${module.aks.name} --overwrite-existing",
+    "az aks get-credentials --resource-group ${data.azurerm_resource_group.rg.name} --name ${module.aks.name} --overwrite-existing",
     "kubectl get nodes",
   ])
 }

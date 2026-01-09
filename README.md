@@ -29,16 +29,23 @@ An enterprise-style AKS platform for architecture practice (AZ-305) and demonstr
 ## Repository layout
 
 ```
+.github/
+└── workflows/
+    └── infra-terraform.yml   # Infra CI/CD (validate/plan/apply)
 infra/
-├── bootstrap/arm/          # ARM template for Terraform state storage
+├── bootstrap/bicep/          # Bicep templates for bootstrapping (RGs + tfstate storage)
+│   ├── bootstrap.bicep       # Main subscription-level deployment
+│   ├── bootstrap.bicepparam  # Parameters file
+│   └── modules/
+│       └── storage.bicep     # Storage account module
 └── terraform/
     ├── modules/
-    │   ├── aks/            # AKS cluster module
-    │   ├── aks-security/   # Security controls (Log Analytics, Policy, Defender)
-    │   ├── jumpbox/        # Jumpbox VM module
-    │   └── network/        # VNet + subnets module
-    ├── *.tf                # Root module
-    └── backend.hcl         # Backend configuration
+    │   ├── aks/              # AKS cluster module
+    │   ├── aks-security/     # Security controls (Log Analytics, Policy, Defender)
+    │   ├── jumpbox/          # Jumpbox VM module
+    │   └── network/          # VNet + subnets module
+    ├── *.tf                  # Root module
+    └── backend.hcl           # Backend configuration
 ```
 
 ## Prerequisites
@@ -49,20 +56,27 @@ infra/
 
 ## Quick start
 
-### 1. Bootstrap Terraform state storage
+### 1. Bootstrap resource groups and Terraform state
+
+The Bicep bootstrap creates **both resource groups** (tfstate + infra) and the storage account.
+This is a subscription-level deployment, enabling true least-privilege for Terraform.
 
 ```zsh
 az login
 
-az group create \
-  --name aks-demo01-weu-tfstate-rg \
-  --location westeurope
+# Subscription-level deployment (creates RGs + storage)
+az deployment sub create \
+  --location westeurope \
+  --template-file infra/bootstrap/bicep/bootstrap.bicep \
+  --parameters infra/bootstrap/bicep/bootstrap.bicepparam
 
-az deployment group create \
-  --resource-group aks-demo01-weu-tfstate-rg \
-  --template-file infra/bootstrap/arm/tfstate.json \
-  --parameters infra/bootstrap/arm/tfstate.parameters.json
+# Verify outputs
+az deployment sub show \
+  --name bootstrap \
+  --query properties.outputs
 ```
+
+> **Note:** Edit `infra/bootstrap/bicep/bootstrap.bicepparam` to customize prefix, environment, location, etc.
 
 ### 2. Create Entra ID admin group
 
@@ -129,6 +143,99 @@ So a plain `terraform destroy` will fail unless you **temporarily remove** the `
 - `infra/terraform/modules/jumpbox/main.tf`
 
 Then run `terraform destroy`, and re-enable `prevent_destroy` afterwards.
+
+## GitHub Actions CI/CD
+
+The repo includes workflows for infrastructure and workload deployments, using **Azure OIDC** (no stored credentials).
+
+| Workflow | Trigger | Action |
+|----------|---------|--------|
+| `infra-terraform.yml` | PR to main/develop | Validate + Plan (comments on PR) |
+| `infra-terraform.yml` | Push to main | Apply |
+
+### Setup: Azure OIDC for GitHub Actions
+
+1. **Create an App Registration:**
+
+```zsh
+az ad app create --display-name "github-actions-aks-demo"
+
+# Note the appId (client ID)
+APP_ID=$(az ad app list --display-name "github-actions-aks-demo" --query "[0].appId" -o tsv)
+```
+
+2. **Create a Service Principal and assign least-privilege roles:**
+
+```zsh
+az ad sp create --id $APP_ID
+
+# Set these to match your naming convention (see variables.tf)
+PREFIX="aks-demo01"        # var.prefix
+ENVIRONMENT="dev"          # var.environment
+LOCATION_CODE="weu"        # westeurope → weu, northeurope → neu
+
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+INFRA_RG="${PREFIX}-${ENVIRONMENT}-${LOCATION_CODE}-rg"
+TFSTATE_RG="${PREFIX}-${LOCATION_CODE}-tfstate-rg"
+
+# Contributor on the infra resource group (create/update/delete resources)
+az role assignment create \
+  --assignee $APP_ID \
+  --role "Contributor" \
+  --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$INFRA_RG"
+
+# Storage Blob Data Contributor on tfstate RG (read/write state blobs)
+az role assignment create \
+  --assignee $APP_ID \
+  --role "Storage Blob Data Contributor" \
+  --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$TFSTATE_RG"
+```
+
+> **Note:** For initial bootstrap (creating new RGs), you may need temporary broader scope,
+> then reduce to RG-scoped after resources exist.
+
+3. **Add Federated Credential for GitHub:**
+
+```zsh
+# For the 'main' branch
+az ad app federated-credential create --id $APP_ID --parameters '{
+  "name": "gha-aks-demo-project-main",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:enrico2828/aks-demo-project:ref:refs/heads/main",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+
+# For pull requests
+az ad app federated-credential create --id $APP_ID --parameters '{
+  "name": "gha-aks-demo-project-pr",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:enrico2828/aks-demo-project:pull_request",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+```
+
+4. **Add GitHub Repository Secrets:**
+
+For multi-environment setups, prefer **Environment secrets** (recommended) so you can protect applies with approvals.
+
+Create an environment named **dev** (default in this repo) and optionally **production**:
+
+- **Settings → Environments → New environment → `dev`**
+- **Settings → Environments → New environment → `production`** (optional)
+
+Then add secrets under each environment:
+
+| Secret | Value |
+|--------|-------|
+| `AZURE_CLIENT_ID` | `$APP_ID` (from step 1) |
+| `AZURE_TENANT_ID` | `az account show --query tenantId -o tsv` |
+| `AZURE_SUBSCRIPTION_ID` | `az account show --query id -o tsv` |
+
+> **Tip:** You can also store these as **Repository secrets** (Settings → Secrets and variables → Actions) if you only use one environment.
+
+5. **(Optional) Protect the `production` environment:**
+
+Go to **Settings → Environments → New environment → "production"** and add required reviewers for manual approval before apply.
 
 ## Accessing AKS
 
