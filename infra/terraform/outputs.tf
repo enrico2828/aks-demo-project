@@ -80,7 +80,6 @@ output "security_features_enabled" {
     azure_policy               = var.enable_azure_policy
     azure_policy_level         = var.azure_policy_level
     azure_policy_effect        = var.azure_policy_effect
-    defender_for_containers    = var.enable_defender_for_containers
     container_insights         = true
     network_policy             = var.aks_network_policy
     image_cleaner              = var.image_cleaner_enabled

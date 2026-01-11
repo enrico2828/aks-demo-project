@@ -39,15 +39,6 @@ variable "log_retention_days" {
 }
 
 # -----------------------------------------------------------------------------
-# Microsoft Defender
-# -----------------------------------------------------------------------------
-variable "enable_defender_for_containers" {
-  type        = bool
-  description = "Enable Microsoft Defender for Containers at subscription level."
-  default     = true
-}
-
-# -----------------------------------------------------------------------------
 # Azure Policy
 # -----------------------------------------------------------------------------
 variable "enable_azure_policy" {

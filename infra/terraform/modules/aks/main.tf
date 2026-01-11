@@ -65,14 +65,6 @@ resource "azurerm_kubernetes_cluster" "aks" {
   # Azure Policy add-on for Gatekeeper-based policy enforcement
   azure_policy_enabled = var.azure_policy_addon_enabled
 
-  # Microsoft Defender for Containers (AKS-level profile)
-  dynamic "microsoft_defender" {
-    for_each = var.defender_log_analytics_workspace_id != null ? [1] : []
-    content {
-      log_analytics_workspace_id = var.defender_log_analytics_workspace_id
-    }
-  }
-
   # Container Insights (OMS agent)
   dynamic "oms_agent" {
     for_each = var.oms_agent_log_analytics_workspace_id != null ? [1] : []
@@ -138,7 +130,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
 
 # Assign Azure RBAC Cluster Admin role on the AKS resource scope.
 resource "azurerm_role_assignment" "aks_cluster_admin" {
-  for_each = var.enable_rbac_cluster_admin_role_assignment ? toset(var.admin_group_object_ids) : toset([])
+  for_each = toset(var.admin_group_object_ids)
 
   scope                = azurerm_kubernetes_cluster.aks.id
   role_definition_name = "Azure Kubernetes Service RBAC Cluster Admin"

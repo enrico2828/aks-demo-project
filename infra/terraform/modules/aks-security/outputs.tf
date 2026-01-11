@@ -14,11 +14,6 @@ output "log_analytics_workspace_primary_key" {
   sensitive   = true
 }
 
-output "defender_enabled" {
-  description = "Whether Defender for Containers is enabled."
-  value       = var.enable_defender_for_containers
-}
-
 output "azure_policy_enabled" {
   description = "Whether Azure Policy is enabled."
   value       = var.enable_azure_policy

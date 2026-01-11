@@ -78,12 +78,6 @@ variable "default_node_pool" {
   })
 }
 
-variable "enable_rbac_cluster_admin_role_assignment" {
-  type        = bool
-  description = "If true, assigns 'Azure Kubernetes Service RBAC Cluster Admin' at the AKS resource scope to the admin_group_object_ids."
-  default     = true
-}
-
 variable "local_account_disabled" {
   type        = bool
   description = "If true, disables local accounts (the --admin credential). Only Entra ID authentication will be allowed."
@@ -98,12 +92,6 @@ variable "azure_policy_addon_enabled" {
   type        = bool
   description = "Enable Azure Policy add-on for Kubernetes (Gatekeeper-based policy enforcement)."
   default     = true
-}
-
-variable "defender_log_analytics_workspace_id" {
-  type        = string
-  description = "Log Analytics workspace ID for Microsoft Defender for Containers. Set to null to disable."
-  default     = null
 }
 
 variable "oms_agent_log_analytics_workspace_id" {
