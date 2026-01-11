@@ -3,7 +3,6 @@
 # =============================================================================
 # This module applies security controls to an AKS cluster:
 # - Log Analytics workspace + Container Insights
-# - Microsoft Defender for Containers
 # - Azure Policy assignment (Kubernetes pod security baseline)
 # =============================================================================
 
@@ -40,16 +39,6 @@ resource "azurerm_log_analytics_solution" "container_insights" {
   }
 
   tags = var.tags
-}
-
-# -----------------------------------------------------------------------------
-# Microsoft Defender for Containers (subscription-level)
-# -----------------------------------------------------------------------------
-resource "azurerm_security_center_subscription_pricing" "defender_containers" {
-  count = var.enable_defender_for_containers ? 1 : 0
-
-  tier          = "Standard"
-  resource_type = "Containers"
 }
 
 # -----------------------------------------------------------------------------

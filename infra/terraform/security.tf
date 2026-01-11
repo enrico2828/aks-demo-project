@@ -3,7 +3,6 @@
 # =============================================================================
 # This file configures security controls for the AKS cluster:
 # - Log Analytics workspace + Container Insights
-# - Microsoft Defender for Containers
 # - Azure Policy (pod security baseline/restricted)
 # - Diagnostic settings
 # =============================================================================
@@ -21,9 +20,6 @@ module "aks_security" {
 
   # Log Analytics
   log_retention_days = var.log_analytics_retention_days
-
-  # Microsoft Defender for Containers (subscription-level)
-  enable_defender_for_containers = var.enable_defender_for_containers
 
   # Azure Policy
   enable_azure_policy              = var.enable_azure_policy

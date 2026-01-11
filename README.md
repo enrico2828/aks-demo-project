@@ -19,7 +19,6 @@ An enterprise-style AKS platform for architecture practice (AZ-305) and demonstr
 - **Entra ID authentication** — no local Kubernetes accounts; `--admin` credential disabled
 - **Azure RBAC for Kubernetes** — authorization via Azure role assignments
 - **Azure Policy for Kubernetes** — Pod Security Standards (baseline or restricted)
-- **Microsoft Defender for Containers** — runtime threat detection (disabled in CI for least-privilege)
 - **Container Insights** — full observability with Log Analytics
 - **Network Policy (Azure NPM)** — micro-segmentation for pod-to-pod traffic
 - **Image Cleaner** — automatic removal of stale/vulnerable images from nodes
@@ -41,7 +40,7 @@ infra/
 └── terraform/
     ├── modules/
     │   ├── aks/              # AKS cluster module
-    │   ├── aks-security/     # Security controls (Log Analytics, Policy, Defender)
+  │   ├── aks-security/     # Security controls (Log Analytics, Azure Policy)
     │   ├── jumpbox/          # Jumpbox VM module
     │   └── network/          # VNet + subnets module
     ├── *.tf                  # Root module
@@ -186,6 +185,20 @@ az role assignment create \
   --role "Contributor" \
   --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$INFRA_RG"
 
+# Resource Policy Contributor on the infra resource group
+# Needed for: Microsoft.Authorization/policyAssignments/* (Azure Policy assignments for AKS / Gatekeeper)
+az role assignment create \
+  --assignee $APP_ID \
+  --role "Resource Policy Contributor" \
+  --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$INFRA_RG"
+
+# User Access Administrator on the infra resource group
+# Needed for: Microsoft.Authorization/roleAssignments/write (Terraform assigns 'AKS RBAC Cluster Admin' to your Entra admin group)
+az role assignment create \
+  --assignee $APP_ID \
+  --role "User Access Administrator" \
+  --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$INFRA_RG"
+
 # Storage Blob Data Contributor on the tfstate storage account (read/write state blobs)
 az role assignment create \
   --assignee $APP_ID \
@@ -222,8 +235,6 @@ Add secrets:
 | `JUMPBOX_SSH_PUBLIC_KEY` | Contents of your SSH public key |
 | `AKS_ADMIN_GROUP_OBJECT_IDS` | JSON array, e.g. `["6b496cdf-..."]` |
 | `JUMPBOX_ALLOWED_SSH_CIDRS` | JSON array, e.g. `["1.2.3.4/32"]` |
-
-> **Note:** Defender for Containers is disabled in CI because it requires subscription-level permissions (`Microsoft.Security/pricings/*`) that would violate least-privilege. Enable it locally if needed.
 
 ---
 
@@ -366,7 +377,6 @@ Key variables (see `variables.tf` for full list):
 | `enable_azure_policy` | `true` | Enable Azure Policy for Kubernetes |
 | `azure_policy_level` | `baseline` | `baseline` (PSS baseline) or `restricted` |
 | `azure_policy_effect` | `deny` | `audit` for visibility, `deny` for enforcement |
-| `enable_defender_for_containers` | `true` | Enable Microsoft Defender for Containers |
 | `aks_network_policy` | `azure` | Network policy: `azure`, `calico`, or `null` |
 | `image_cleaner_enabled` | `true` | Remove stale/vulnerable images from nodes |
 | `aks_run_command_enabled` | `false` | Allow `az aks command invoke` |
@@ -405,7 +415,6 @@ Key variables (see `variables.tf` for full list):
 | **Identity** | Entra ID + Azure RBAC for Kubernetes |
 | **Network** | Private cluster + Azure Network Policy |
 | **Policy** | Azure Policy (Pod Security Standards) |
-| **Detection** | Microsoft Defender for Containers |
 | **Logging** | Container Insights + control plane audit logs |
 | **Secrets** | Key Vault Secrets Provider (CSI driver, optional) |
 | **Images** | Image Cleaner for stale image removal |
@@ -437,3 +446,4 @@ The following are useful for production but excluded from this demo due to cost:
 - **Azure Managed Grafana + Prometheus** — ~€150/month for Grafana. Container Insights provides sufficient monitoring.
 - **Azure Front Door / Application Gateway** — Ingress with WAF.
 - **Azure Firewall** — Egress filtering (~€900/month).
+- **Microsoft Defender for Containers** — High resource consumption and cost. Requires subscription-scope configuration.
