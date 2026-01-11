@@ -55,6 +55,14 @@ jobs:
     runs-on: ubuntu-latest
     # Use the dev environment so Environment secrets are available (defaults in this repo).
     environment: dev
+    env:
+      # Sensitive inputs (from Environment secrets)
+      TF_VAR_jumpbox_ssh_public_key: ${{ secrets.JUMPBOX_SSH_PUBLIC_KEY }}
+      TF_VAR_jumpbox_allowed_ssh_cidrs: ${{ secrets.JUMPBOX_ALLOWED_SSH_CIDRS }}
+      TF_VAR_aks_admin_group_object_ids: ${{ secrets.AKS_ADMIN_GROUP_OBJECT_IDS }}
+      # Non-sensitive defaults (exposed as TF_VAR_* so Terraform reads them)
+      TF_VAR_jumpbox_assign_public_ip: "true"
+      TF_VAR_jumpbox_bootstrap_tools: "true"
     outputs:
       plan-exit-code: ${{ steps.plan.outputs.exitcode }}
 
@@ -153,6 +161,14 @@ jobs:
     needs: terraform-plan
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.terraform-plan.outputs.plan-exit-code == '2'
     environment: dev
+    env:
+      # Sensitive inputs (from Environment secrets)
+      TF_VAR_jumpbox_ssh_public_key: ${{ secrets.JUMPBOX_SSH_PUBLIC_KEY }}
+      TF_VAR_jumpbox_allowed_ssh_cidrs: ${{ secrets.JUMPBOX_ALLOWED_SSH_CIDRS }}
+      TF_VAR_aks_admin_group_object_ids: ${{ secrets.AKS_ADMIN_GROUP_OBJECT_IDS }}
+      # Non-sensitive defaults (exposed as TF_VAR_* so Terraform reads them)
+      TF_VAR_jumpbox_assign_public_ip: "true"
+      TF_VAR_jumpbox_bootstrap_tools: "true"
 
     steps:
       - name: Checkout

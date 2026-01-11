@@ -65,7 +65,7 @@ variable "jumpbox_kubelogin_version" {
 variable "jumpbox_vm_size" {
   description = "Azure VM size for the jumpbox (must be available in the chosen region)."
   type        = string
-  default     = "Standard_B1s"
+  default     = "Standard_D2s_v6"
 }
 
 variable "jumpbox_image_publisher" {
@@ -150,7 +150,7 @@ variable "aks_dns_service_ip" {
 variable "aks_system_node_vm_size" {
   description = "VM size for the system node pool."
   type        = string
-  default     = "Standard_D2s_v5"
+  default     = "Standard_D2s_v6"
 }
 
 variable "aks_system_node_count" {

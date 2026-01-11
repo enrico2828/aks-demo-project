@@ -11,7 +11,7 @@ An enterprise-style AKS platform for architecture practice (AZ-305) and demonstr
 | **AKS Cluster** | Private cluster with Azure CNI Overlay, Entra ID integration, Azure RBAC for Kubernetes |
 | **Jumpbox VM** | Linux VM for cluster administration (SSH + optional public IP) |
 | **Log Analytics** | Central logging for Container Insights and control plane logs |
-| **Terraform State** | Remote state in Azure Storage |
+| **Terraform State** | Remote state in Azure Storage (Azure AD auth, no storage keys) |
 
 ### Security posture
 
@@ -19,11 +19,11 @@ An enterprise-style AKS platform for architecture practice (AZ-305) and demonstr
 - **Entra ID authentication** — no local Kubernetes accounts; `--admin` credential disabled
 - **Azure RBAC for Kubernetes** — authorization via Azure role assignments
 - **Azure Policy for Kubernetes** — Pod Security Standards (baseline or restricted)
-- **Microsoft Defender for Containers** — Runtime threat detection and vulnerability scanning
-- **Container Insights** — Full observability with Log Analytics
-- **Network Policy (Azure NPM)** — Micro-segmentation for pod-to-pod traffic
-- **Image Cleaner** — Automatic removal of stale/vulnerable images from nodes
-- **Run Command disabled** — Prevents `az aks command invoke` access
+- **Microsoft Defender for Containers** — runtime threat detection (disabled in CI for least-privilege)
+- **Container Insights** — full observability with Log Analytics
+- **Network Policy (Azure NPM)** — micro-segmentation for pod-to-pod traffic
+- **Image Cleaner** — automatic removal of stale/vulnerable images from nodes
+- **Run Command disabled** — prevents `az aks command invoke` access
 - **Jumpbox hardened** — SSH keys only, explicit CIDR allow-list, no password auth
 
 ## Repository layout
@@ -53,6 +53,9 @@ infra/
 - Azure CLI (`az`) authenticated to the target subscription
 - Terraform >= 1.5
 - An Entra ID security group for AKS administrators
+- **Storage Blob Data Contributor** role on the tfstate storage account (for local Terraform runs)
+
+---
 
 ## Quick start
 
@@ -74,6 +77,16 @@ az deployment sub create \
 az deployment sub show \
   --name bootstrap \
   --query properties.outputs
+
+# Grant yourself Storage Blob Data Contributor for local Terraform runs
+# (The backend uses Azure AD auth, not storage keys)
+TFSTATE_STORAGE_ACCOUNT=$(az deployment sub show --name bootstrap --query properties.outputs.storageAccountName.value -o tsv)
+TFSTATE_RG=$(az deployment sub show --name bootstrap --query properties.outputs.tfstateResourceGroupName.value -o tsv)
+
+az role assignment create \
+  --assignee "$(az ad signed-in-user show --query id -o tsv)" \
+  --role "Storage Blob Data Contributor" \
+  --scope "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$TFSTATE_RG/providers/Microsoft.Storage/storageAccounts/$TFSTATE_STORAGE_ACCOUNT"
 ```
 
 > **Note:** Edit `infra/bootstrap/bicep/bootstrap.bicepparam` to customize prefix, environment, location, etc.
@@ -130,23 +143,11 @@ aks_admin_group_object_ids = ["<group-object-id>"]
 terraform apply
 ```
 
-### Destroy / cleanup
-
-This demo uses Terraform safety rails (`lifecycle.prevent_destroy`) to protect:
-
-- the AKS cluster
-- the jumpbox public IP
-
-So a plain `terraform destroy` will fail unless you **temporarily remove** the `prevent_destroy = true` lines in:
-
-- `infra/terraform/modules/aks/main.tf`
-- `infra/terraform/modules/jumpbox/main.tf`
-
-Then run `terraform destroy`, and re-enable `prevent_destroy` afterwards.
+---
 
 ## GitHub Actions CI/CD
 
-The repo includes workflows for infrastructure and workload deployments, using **Azure OIDC** (no stored credentials).
+The repo includes a workflow for infrastructure deployments using **Azure OIDC** (no stored credentials).
 
 | Workflow | Trigger | Action |
 |----------|---------|--------|
@@ -155,7 +156,7 @@ The repo includes workflows for infrastructure and workload deployments, using *
 
 ### Setup: Azure OIDC for GitHub Actions
 
-1. **Create an App Registration:**
+#### 1. Create an App Registration
 
 ```zsh
 az ad app create --display-name "github-actions-aks-demo"
@@ -164,7 +165,7 @@ az ad app create --display-name "github-actions-aks-demo"
 APP_ID=$(az ad app list --display-name "github-actions-aks-demo" --query "[0].appId" -o tsv)
 ```
 
-2. **Create a Service Principal and assign least-privilege roles:**
+#### 2. Create a Service Principal and assign least-privilege roles
 
 ```zsh
 az ad sp create --id $APP_ID
@@ -177,7 +178,7 @@ LOCATION_CODE="weu"        # westeurope → weu, northeurope → neu
 SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 INFRA_RG="${PREFIX}-${ENVIRONMENT}-${LOCATION_CODE}-rg"
 TFSTATE_RG="${PREFIX}-${LOCATION_CODE}-tfstate-rg"
-TFSTATE_STORAGE_ACCOUNT="aksdemo01weu9d9d14"  # from infra/terraform/backend.hcl
+TFSTATE_STORAGE_ACCOUNT=$(az deployment sub show --name bootstrap --query properties.outputs.storageAccountName.value -o tsv)
 
 # Contributor on the infra resource group (create/update/delete resources)
 az role assignment create \
@@ -192,61 +193,39 @@ az role assignment create \
   --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$TFSTATE_RG/providers/Microsoft.Storage/storageAccounts/$TFSTATE_STORAGE_ACCOUNT"
 ```
 
-> **Note:** For initial bootstrap (creating new RGs), you may need temporary broader scope,
-> then reduce to RG-scoped after resources exist.
-
-3. **Add Federated Credential for GitHub:**
+#### 3. Add Federated Credential for GitHub
 
 ```zsh
-# This workflow uses GitHub *Environments* (env: dev). When a job runs with
+# This workflow uses GitHub Environments (env: dev). When a job runs with
 # `environment: dev`, GitHub's OIDC subject looks like:
 #   repo:<owner>/<repo>:environment:dev
 
-# For the 'dev' environment (used by PR plans and (for now) applies)
 az ad app federated-credential create --id $APP_ID --parameters '{
   "name": "gha-aks-demo-project-env-dev",
   "issuer": "https://token.actions.githubusercontent.com",
   "subject": "repo:enrico2828/aks-demo-project:environment:dev",
   "audiences": ["api://AzureADTokenExchange"]
 }'
-
-# Future option: if you later add more environments (e.g. production),
-# add additional federated credentials that match the environment subject:
-#   repo:enrico2828/aks-demo-project:environment:production
-
-# Alternative: if you decide NOT to use GitHub Environments, you can federate by branch/PR subjects:
-#   repo:enrico2828/aks-demo-project:ref:refs/heads/main
-#   repo:enrico2828/aks-demo-project:pull_request
 ```
 
-4. **Add GitHub Repository Secrets:**
+#### 4. Add GitHub Environment Secrets
 
-For multi-environment setups, prefer **Environment secrets** (recommended) so you can protect applies with approvals.
+Create an environment named **dev**: **Settings → Environments → New environment → `dev`**
 
-Create an environment named **dev** (this repo currently uses a single environment for both plan and apply):
-
-- **Settings → Environments → New environment → `dev`**
-
-Then add secrets under each environment:
+Add secrets:
 
 | Secret | Value |
 |--------|-------|
 | `AZURE_CLIENT_ID` | `$APP_ID` (from step 1) |
 | `AZURE_TENANT_ID` | `az account show --query tenantId -o tsv` |
 | `AZURE_SUBSCRIPTION_ID` | `az account show --query id -o tsv` |
+| `JUMPBOX_SSH_PUBLIC_KEY` | Contents of your SSH public key |
+| `AKS_ADMIN_GROUP_OBJECT_IDS` | JSON array, e.g. `["6b496cdf-..."]` |
+| `JUMPBOX_ALLOWED_SSH_CIDRS` | JSON array, e.g. `["1.2.3.4/32"]` |
 
-> **Tip:** You can also store these as **Repository secrets** (Settings → Secrets and variables → Actions) if you only use one environment.
+> **Note:** Defender for Containers is disabled in CI because it requires subscription-level permissions (`Microsoft.Security/pricings/*`) that would violate least-privilege. Enable it locally if needed.
 
-> **Heads up:** The workflow `infra-terraform.yml` currently runs both plan and apply in the **`dev`** environment.
-> If you add more environments later, you must also add matching federated credentials and secrets for each environment.
-
-> **OIDC note:** When using GitHub Environments, the OIDC subject claim changes to
-> `repo:<owner>/<repo>:environment:<env>`. Make sure your Entra **Federated credentials** include a matching subject
-> (e.g., `repo:enrico2828/aks-demo-project:environment:dev`).
-
-5. **(Optional) Add a `production` environment later** (out of scope for this demo)
-
-If you later introduce a `production` environment for gated applies, add required reviewers and create a matching Entra federated credential.
+---
 
 ## Accessing AKS
 
@@ -285,6 +264,70 @@ The jumpbox includes:
 - `k` alias for `kubectl`
 - `kubelogin` for Entra ID token handling
 
+---
+
+## Cleanup
+
+### Quick cleanup (Terraform only)
+
+This repo uses `lifecycle.prevent_destroy` to protect critical resources (AKS cluster, jumpbox public IP).
+
+To destroy:
+
+1. Temporarily set `prevent_destroy = false` in:
+   - `infra/terraform/modules/aks/main.tf`
+   - `infra/terraform/modules/jumpbox/main.tf`
+2. Run `terraform destroy`
+3. Re-enable `prevent_destroy = true` if you plan to keep using the repo.
+
+### Full cleanup (remove everything from Azure)
+
+This removes all Terraform-managed infrastructure, bootstrap resources, and manually-created identities.
+
+#### 1) Destroy Terraform-managed infrastructure
+
+```zsh
+cd infra/terraform
+terraform destroy
+```
+
+#### 2) Delete bootstrap resource groups
+
+```zsh
+INFRA_RG=$(az deployment sub show --name bootstrap --query properties.outputs.infraResourceGroupName.value -o tsv)
+TFSTATE_RG=$(az deployment sub show --name bootstrap --query properties.outputs.tfstateResourceGroupName.value -o tsv)
+
+az group delete --name "$INFRA_RG" --yes --no-wait
+az group delete --name "$TFSTATE_RG" --yes --no-wait
+```
+
+#### 3) Remove your local tfstate role assignment
+
+```zsh
+TFSTATE_STORAGE_ACCOUNT=$(az deployment sub show --name bootstrap --query properties.outputs.storageAccountName.value -o tsv)
+TFSTATE_RG=$(az deployment sub show --name bootstrap --query properties.outputs.tfstateResourceGroupName.value -o tsv)
+
+az role assignment delete \
+  --assignee "$(az ad signed-in-user show --query id -o tsv)" \
+  --role "Storage Blob Data Contributor" \
+  --scope "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$TFSTATE_RG/providers/Microsoft.Storage/storageAccounts/$TFSTATE_STORAGE_ACCOUNT"
+```
+
+#### 4) Delete GitHub Actions Entra app
+
+```zsh
+APP_ID=$(az ad app list --display-name "github-actions-aks-demo" --query "[0].appId" -o tsv)
+az ad app delete --id "$APP_ID"
+```
+
+#### 5) Delete the demo Entra admin group (optional)
+
+```zsh
+az ad group delete --group "aks-demo01-cluster-admins"
+```
+
+---
+
 ## Terraform outputs
 
 | Output | Description |
@@ -298,6 +341,8 @@ The jumpbox includes:
 | `log_analytics_workspace_id` | Log Analytics workspace resource ID |
 | `security_features_enabled` | Summary of security features enabled |
 
+---
+
 ## Configuration reference
 
 Key variables (see `variables.tf` for full list):
@@ -310,59 +355,47 @@ Key variables (see `variables.tf` for full list):
 | `prefix` | `aks-demo01` | Resource naming prefix |
 | `environment` | `dev` | Environment tag |
 | `aks_admin_group_object_ids` | — | Entra ID group(s) for cluster admin |
+| `jumpbox_vm_size` | `Standard_D2s_v6` | VM size for the jumpbox |
 | `jumpbox_bootstrap_tools` | `false` | Install az/kubectl/kubelogin via cloud-init |
-| `jumpbox_kubectl_version` | (latest) | Pin kubectl version (e.g., `v1.29.15`) |
-| `jumpbox_kubelogin_version` | (latest) | Pin kubelogin version (e.g., `0.2.14`) |
+| `aks_system_node_vm_size` | `Standard_D2s_v6` | VM size for AKS system node pool |
 
 ### Security hardening
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `enable_azure_policy` | `true` | Enable Azure Policy for Kubernetes |
-| `azure_policy_level` | `baseline` | `baseline` (PSS baseline) or `restricted` (PSS restricted) |
+| `azure_policy_level` | `baseline` | `baseline` (PSS baseline) or `restricted` |
 | `azure_policy_effect` | `deny` | `audit` for visibility, `deny` for enforcement |
 | `enable_defender_for_containers` | `true` | Enable Microsoft Defender for Containers |
 | `aks_network_policy` | `azure` | Network policy: `azure`, `calico`, or `null` |
 | `image_cleaner_enabled` | `true` | Remove stale/vulnerable images from nodes |
 | `aks_run_command_enabled` | `false` | Allow `az aks command invoke` |
-| `key_vault_secrets_provider_enabled` | `false` | Enable Key Vault CSI driver |
-| `log_analytics_retention_days` | `30` | Log retention in days (minimum) |
 
-### Safety rails
-
-Some resources are protected with Terraform `lifecycle.prevent_destroy` to reduce the risk of accidental deletion:
-
-- AKS cluster (`modules/aks/main.tf`)
-- Jumpbox public IP (`modules/jumpbox/main.tf`)
-
-### How to destroy when really needed
-To destroy intentionally:
-
-1. Temporarily remove (or set to `false`) the `prevent_destroy = true` lines in the two files above.
-2. Run `terraform destroy` (or `terraform destroy -target=module.aks` / `-target=module.jumpbox`).
-3. Re-enable `prevent_destroy = true` afterwards.
+---
 
 ## Architecture notes
 
 ### Network
 
-- VNet: `10.10.0.0/16`
-- AKS subnet: `10.10.0.0/22` (1024 addresses)
-- Jumpbox subnet: `10.10.5.0/27` (32 addresses)
-- Private endpoints subnet: `10.10.4.0/24`
-- Pod CIDR (overlay): `192.168.0.0/16`
-- Service CIDR: `10.20.0.0/16`
+| CIDR | Purpose |
+|------|---------|
+| `10.10.0.0/16` | VNet |
+| `10.10.0.0/22` | AKS subnet (1024 addresses) |
+| `10.10.4.0/24` | Private endpoints subnet |
+| `10.10.5.0/27` | Jumpbox subnet (32 addresses) |
+| `192.168.0.0/16` | Pod CIDR (overlay) |
+| `10.20.0.0/16` | Service CIDR |
 
 ### AKS configuration
 
 - **Network plugin**: Azure CNI Overlay
-- **Network policy**: Azure NPM (default) — enables pod-to-pod micro-segmentation
-- **Private cluster**: Yes (API server not internet-accessible)
+- **Network policy**: Azure NPM
+- **Private cluster**: Yes
 - **Local accounts**: Disabled (Entra ID only)
 - **OIDC issuer**: Enabled (for Workload Identity)
-- **System node pool**: 1 node, `Standard_D2s_v5`, critical addons only
+- **System node pool**: 1 node, `Standard_D2s_v6`
 - **Azure Policy**: Gatekeeper-based pod security enforcement
-- **Image Cleaner**: Automatic cleanup of stale images (48h interval)
+- **Image Cleaner**: Automatic cleanup (48h interval)
 - **Run command**: Disabled
 
 ### Security controls
@@ -382,8 +415,10 @@ To destroy intentionally:
 1. User SSHs to jumpbox
 2. `az login` authenticates to Entra ID
 3. `az aks get-credentials` fetches kubeconfig (configured for Entra auth)
-4. `kubectl` commands use `kubelogin` to obtain tokens from the `az` session
+4. `kubectl` commands use `kubelogin` to obtain tokens
 5. AKS validates the token and checks Azure RBAC role assignments
+
+---
 
 ## Next steps
 
@@ -391,15 +426,14 @@ Planned additions:
 
 - ACR (Azure Container Registry) with private endpoint
 - Key Vault integration with CSI driver
-- GitHub Actions (OIDC-based CI/CD)
 - Application workloads with Workload Identity
 - Network policies for workload segmentation
-- Alerting (Action Group + metric/log alerts for node/pod health)
+- Alerting (Action Group + metric/log alerts)
 
 ## Out of scope
 
 The following are useful for production but excluded from this demo due to cost:
 
-- **Azure Managed Grafana + Prometheus** — Full observability stack (~€150/month for Grafana). Container Insights provides sufficient monitoring for demo purposes.
+- **Azure Managed Grafana + Prometheus** — ~€150/month for Grafana. Container Insights provides sufficient monitoring.
 - **Azure Front Door / Application Gateway** — Ingress with WAF.
-- **Azure Firewall** — Egress filtering (requires dedicated subnet + ~€900/month).
+- **Azure Firewall** — Egress filtering (~€900/month).
